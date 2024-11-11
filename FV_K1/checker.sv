@@ -1,125 +1,95 @@
 checker black_box_checker (
-    clk, rst,
-    a1, a2, a3, a4, a5,
-    cntA, cntB,
-    b1, b2, b3,
-    c1, c2, c3, c4, c5, c6,
-    d1, d2, d3, d4, d5
+    clk, reset,
+    a1, a2, a3,
+    count_a,
+    b,
+    c1, c2, c3, c4,
+    a5, a6,
+    b1, b2, b3, b4
 );
 
     default clocking @(posedge clk);
     endclocking
 
-    default disable iff rst;
-
-    parameter int MAX_CNT = 8192;
+    default disable iff reset;
 
 
-    // Funkcija za proveru savršenih brojeva (brojevi jednaki zbiru svojih delilaca, npr. 6 = 1 + 2 + 3)
-    function automatic bit is_perfect(input int number);
-        int sum = 1;
-        int i;
-        for (i = 2; i * i <= number; i++) begin
-            if (number % i == 0) begin
-                sum += i;
-                if (i != number / i) sum += number / i;
-            end
+    // Funkcija za proveru Fibonacijevih brojeva
+    function automatic bit is_fibonacci(input logic [10:0] number);
+        int a = 0, b = 1, c;
+        int extended_number = number; 
+        for (int i = 0; i < 20; i++) begin
+            if (b == extended_number) return 1;
+            c = a + b;
+            a = b;
+            b = c;
         end
-        return (sum == number && number != 1);
+        return 0;
     endfunction
 
-    // Funkcija za proveru Haršadovih brojeva (brojevi deljivi sa sumom svojih cifara)
-    function automatic bit is_harshad(input int number);
-        int sum = 0, temp = number;
-        while (temp > 0) begin
-            sum += temp % 10;
-            temp /= 10;
+
+    // Funkcija za proveru savrsenih kvadrata
+    function automatic bit is_perfect_square(input logic [10:0] number);
+        int extended_number = number; 
+        for (int i = 1; i * i <= extended_number; i++) begin
+            if (i * i == extended_number) return 1;
         end
-        return (number % sum == 0);
+        return 0;
     endfunction
 
-    // Funkcija za brojanje jedinica u binarnom prikazu broja
-    function automatic int count_one_bits(input int number);
-        int count = 0;
-        int temp = number;
-        while (temp > 0) begin
-            count += (temp & 1);
-            temp >>= 1;
+    // Signal koji označava da li je count_a Harshad broj iz definisanog skupa
+    logic is_harshad_count_a;
+
+    // Funkcija za proveru da li je count_a u skupu Harshad brojeva
+    function automatic bit is_hardcoded_harshad(input logic [10:0] number);
+        return number == 18 || number == 21 || number == 24;
+    endfunction
+
+    // Dodeljivanje vrednosti za Harshad signal is_harshad_count_a
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            is_harshad_count_a <= 0;
+        end else begin
+            is_harshad_count_a <= is_hardcoded_harshad(count_a);
         end
-        return count;
-    endfunction
-
-    // Funkcija za proveru specifičnih binarnih obrazaca (brojevi koji sadrže obrazac 010101 u binarnom prikazu)
-    function automatic bit has_alternating_pattern(input int number);
-        return ((number & 63) == 42);  // 42 u binarnom je 010101
-    endfunction
+    end
 
 
-    // Property 1: Assert - `a1` aktivan kada je `cntA` savršen broj
-    p1: assert property (a1 |-> is_perfect(cntA));
+    // p1: ako je a1 aktivan i count_a je Fibonacijev broj, onda ce a1 biti deaktiviran tri ciklusa kasnije.
+    p1: assert property ((a1 && is_fibonacci(count_a)) |-> ##3 !(a1 && is_fibonacci(count_a))[*1]);
 
-    // Proverava da li je broj palindromski
-    function automatic bit is_palindrome(input int number);
-        int reversed = 0, temp = number;
-        while (temp > 0) begin
-            reversed = (reversed * 10) + (temp % 10);
-            temp /= 10;
-        end
-        return (reversed == number);
-    endfunction
-	
-    // Property 2: Cover - `a2` aktivan kada je `cntB` palindrom i `cntA` ima tačno 5 jedinica
-    p2: cover property (a2 && is_palindrome(cntB) && count_one_bits(cntA) == 5);
+    // p2: kada je a2 aktivan (stepen broja 2), c1 aktivira na sledećih 5 ciklusa u nizu
+    p2: cover property (a2 |-> c1[*5]);
 
-    // Property 3: Assume - `a3` aktivan kada `cntB` ima obrazac 010101 u poslednjih 6 bita
-    p3: assume property (a3 |-> has_alternating_pattern(cntB));
+    // p3: a3 aktivira samo kada je count_a deljiv sa 7 ili 11, ali nije deljiv sa 5
+    p3: assume property ((count_a % 7 == 0 || count_a % 11 == 0) && count_a % 5 != 0 |-> a3);
 
-    // Property 4: Assert - `a4` aktivan kada XOR između `cntA` i `cntB` daje sve jedinice
-    p4: assert property (a4 |-> (cntA xor cntB == 8191));
+    // p4: b se aktivira kada je ostakak pri deljenju sa 5 jednak broju 2
+    p4: assume property (count_a % 5 == 2 |-> b);
 
-    // Property 5: Cover - `a5` aktivan kada su svi bitovi `cntA` različiti
-    function automatic bit all_bits_different(input int number);
-        int seen = 0;
-        int temp = number;
-        while (temp > 0) begin
-            if ((seen & (1 << (temp % 2))) != 0) return 0;
-            seen |= (1 << (temp % 2));
-            temp /= 2;
-        end
-        return 1;
-    endfunction
-	
-    // Property 5: Cover - `a5` aktivan kada su svi bitovi `cntA` različiti
-    p5: cover property (a5 && all_bits_different(cntA));
+    // p5: kada je aktivan a5, sigurno se nece aktivirati c1, c2, ili c3
+    p5: assert property (a5 |-> !c1 && !c2 && !c3);
 
-    // Property 6: Assume - `b1` aktivan kada cntA ima tačno 6 jedinica i cntB je paran
-    p6: assume property (b1 |-> (count_one_bits(cntA) == 6 && cntB % 2 == 0));
+    // p6: b3 aktivira samo kada je count_a Fibonacijev broj, ako pada znamo da b3 nema vrednosti iz skupa Fibonacijevih brojeva
+    p6: assert property (b3 == is_fibonacci(count_a));
 
-    // Property 7: Assert - `b2` aktivan kada cntA i cntB imaju tačno 3 zajedničke jedinice i cntB nije deljiv sa 3
-    p7: assert property (b2 |-> (count_one_bits(cntA & cntB) == 3 && cntB % 3 != 0));
+    // p7: kada se b4 aktivira, is_harshad_count_a mora se aktivirati u sledecem taktu, a b1 ne sme biti aktivan najmanje 4 ciklusa nakon aktivacije b4.
+	property p7_property;
+	    @(posedge clk) b4 |-> ##1 (is_harshad_count_a && !b1) ##1 !b1 ##1 !b1;
+	endproperty
 
-    // Property 8: Cover - `c1`, `c2`, i `c3` aktivni kada je cntA Haršadov broj i cntB ima neparan broj jedinica
-    p8: cover property (c1 && c2 && c3 && is_harshad(cntA) && (count_one_bits(cntB) % 2 == 1));
+	p7: assert property (p7_property);
 
-    // Property 9: Assume - `c4` i `c5` ostaju aktivni kada su poslednjih 4 bita cntA i cntB jednaki u naredna 4 ciklusa
-    p9: assume property (c4 && c5 |=> ##[0:3] ((cntA & 15) == (cntB & 15)));
+   // p8: kada su b4 i b2 jednaki, a zatim se a6 i b1 podudaraju makar jednom u narednih 34 ciklusa
+   p8: assume property ((b4 == b2) |-> ##[1:34] (a6 && b1) ##1 (!a6 || !b1)[*0:$]);
 
-    // Property 10: Assert - `d1`, `d3`, i `d5` aktivni kada su ispunjeni specifični odnosi između cntA i cntB
-    p10: assert property (d1 && d3 && d5 |-> ((cntA + cntB) % 256 == 0 || (cntA ^ cntB) % 128 == 0 || cntA == cntB / 2));
+    // p9: kada je count_a Harshad broj, c3 i b4 prate naizmeničan obrazac svakih 5 ciklusa
+    p9: cover property (is_harshad_count_a |-> (c3 ##5 b4 ##5 c3));
 
-    // Dodatna propertiji za kreativnost
-    // Property 11: Assert - `b3` aktivan kada cntA i cntB imaju isti broj jedinica
-    p11: assert property (b3 |-> (count_one_bits(cntA) == count_one_bits(cntB)));
+    // p10: kada je count_a kvadrat neparnog broja, c2 aktivira sledeca 4 ciklusa, a zatim c4 na sledecih 3
+    p10: cover property (is_perfect_square(count_a) && count_a % 2 == 1 |-> (c2[*4] ##1 c4[*3]));
 
-    // Property 12: Cover - `c6` aktivan kada je broj jedinica u cntA veći od 6 ili cntB veći od 6
-    p12: cover property (c6 && (count_one_bits(cntA) > 6 || count_one_bits(cntB) > 6));
-
-    // Property 13: Assume - `d2` aktivan kada je broj jedinica u (cntA or cntB) tačno 9
-    p13: assume property (d2 |-> (count_one_bits(cntA | cntB) == 9));
-
-    // Dodatni pokrivači za opsege cntA i cntB
-    cover_low: cover property ((cntA < MAX_CNT / 3) && (cntB < MAX_CNT / 3));
-    cover_mid: cover property ((cntA >= MAX_CNT / 3 && cntA < (2 * MAX_CNT / 3)) && (cntB >= MAX_CNT / 3 && cntB < (2 * MAX_CNT / 3)));
-    cover_high: cover property ((cntA >= (2 * MAX_CNT / 3)) && (cntB >= (2 * MAX_CNT / 3)));
+    
 
 endchecker
+

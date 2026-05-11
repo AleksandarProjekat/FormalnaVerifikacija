@@ -3,4 +3,5 @@ analyze -sv09 panex.sv
 elaborate -top {panex}
 clock clk
 reset rst
-prove -bg -all
+set_engine_mode Tri
+prove -property {panex.cover_done}

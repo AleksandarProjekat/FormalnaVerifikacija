@@ -1,95 +1,137 @@
-checker v_bb_model_checker (
-    CLK,
-     RST,
-     STALL,
-     REQ,
-    ACK,
-     OPCH,
-     DONE,
-     ERR,
-     OPS,
-     TEST,
-     AB,
-     BC,
-     CD,
-     BUSY,
-     DATA
+module v_bb_props (
+  input  wire        CLK,
+  input  wire        RST,
+  input  wire        STALL,
+  input  wire        REQ,
+  input  wire        OPCH,
+
+  input  wire [3:0]  OPS,
+  input  wire        TEST,
+  input  wire        AB,
+  input  wire        BC,
+  input  wire        CD,
+  input  wire        ERR,
+  input  wire        ACK,
+  input  wire        BUSY,
+  input  wire        DONE,
+  input  wire [2:0]  DATA,
+
+  input  wire        ack_next,
+  input  wire [2:0]  unacked_reqs,
+  input  wire [4:0]  state_reg,
+  input  wire [3:0]  cnt,
+  input  wire        _000_
 );
 
-    default clocking @(posedge CLK);
-    endclocking
+  default clocking cb @(posedge CLK);
+  endclocking
+  default disable iff (RST);
 
-    default disable iff (RST);
+  // ============================================================
+  // Assume:
+  // Write any necessary assumptions for the inputs to ensure every assertion passes.
+  // ============================================================
 
-    // Assert: Every REQ must have a corresponding ACK
-    property req_ack_correspondence;
-        disable iff (RST)
-        REQ |-> ##[1:10] ACK; 
-    endproperty
-    assert property(req_ack_correspondence) else $error("REQ without ACK detected");
+  a_req_pulse:      assume property ( REQ |-> ##1 !REQ );
+  a_req_limit_5:    assume property ( (unacked_reqs >= 3'd5) |-> !REQ );
+  a_stall_fair:     assume property ( STALL |-> ##[1:16] !STALL );
 
-    // Assert: While there are pending REQs, BUSY is active
-    property pending_reqs_busy;
-        disable iff (RST)
-        (REQ && !ACK) |-> BUSY;
-    endproperty
-    assert property(pending_reqs_busy) else $error("BUSY inactive while REQs are pending");
+  // ============================================================
+  // Assert:
+  // Every REQ should have a corresponding ACK;
+  // There can be up to 5 pending REQs;
+  // When a REQ occurs, its corresponding ACK cannot occur in the same cycle;
+  // When a REQ occurs, ACK of a previous REQ can occur in the same cycle.
+  // ============================================================
 
-    // Assert: DONE is asserted for exactly one cycle after the last ACK
-    property done_single_cycle_after_ack;
-        disable iff (RST)
-        (ACK && !$past(REQ)) ##1 (DONE && !$stable(DONE)) ##1 !DONE;
-    endproperty
-    assert property(done_single_cycle_after_ack) else $error("DONE is not asserted correctly after ACK");
+  p_req_eventually_ack: assert property ( REQ |-> ##[1:64] ACK );
 
-    // Assert: DATA is stable when DONE is asserted
-    property data_stable_when_done;
-        disable iff (RST)
-        DONE |-> $stable(DATA);
-    endproperty
-    assert property(data_stable_when_done) else $error("DATA is not stable when DONE is asserted");
+  p_no_samecycle_ack_when_empty: assert property (
+    (REQ && ($past(unacked_reqs) == 3'd0)) |-> !ACK
+  );
 
-    // Assert: TEST triggers the AB -> BC -> CD sequence
-    property test_sequence;
-        disable iff (RST)
-        TEST |-> (AB[*3] ##3 BC[*3] or AB[*3] ##4 BC[*4]) ##[1:10] CD; // Zamena [3:4]
-    endproperty
-    assert property(test_sequence) else $error("TEST sequence AB -> BC -> CD violated");
+  p_pending_le_5: assert property ( unacked_reqs <= 3'd5 );
 
-    // Assert: ERR is never active
-    property no_error_signal;
-        disable iff (RST)
-        !ERR;
-    endproperty
-    assert property(no_error_signal) else $error("ERR is active");
+  // ============================================================
+  // Assert:
+  // While there are any pending REQs, BUSY is active.
+  // ============================================================
 
-    // Assert: OPS has at most 1 bit set
-    property ops_single_bit_set;
-        disable iff (RST)
-        $countones(OPS) <= 1;
-    endproperty
-    assert property(ops_single_bit_set) else $error("OPS has invalid bit pattern");
+  p_busy_when_pending: assert property ( (unacked_reqs != 3'd0) |-> BUSY );
 
-    // Assert: OPS does not change during STALL
-    property ops_no_change_during_stall;
-        disable iff (RST)
-        STALL |-> !$changed(OPS);
-    endproperty
-    assert property(ops_no_change_during_stall) else $error("OPS changed during STALL");
+  // ============================================================
+  // Assert:
+  // On the cycle following the last ACK, if there is no new REQ,
+  // DONE is asserted for exactly one cycle.
+  // ============================================================
 
-    // Cover: OPS transitions from 4'b0100 to 4'b0101 after 4 cycles
-    property ops_transition_cover;
-        disable iff (RST)
-        (OPS == 4'b0100) ##4 (OPS == 4'b0101);
-    endproperty
-    cover property(ops_transition_cover);
+  p_done_one_cycle: assert property ( _000_ |=> (DONE ##1 !DONE) );
 
-    // Cover: Sequence of AB -> BC -> CD is observed
-    property ab_bc_cd_cover;
-        disable iff (RST)
-        (AB[*3] ##3 BC[*3] or AB[*3] ##4 BC[*4]) ##[1:10] CD; // Zamena [3:4]
-    endproperty
-    cover property(ab_bc_cd_cover);
+  // ============================================================
+  // Assert:
+  // When DONE is asserted, DATA is stable.
+  // ============================================================
 
-endchecker
+  p_data_stable_on_done: assert property ( DONE |-> $stable(DATA) );
+
+  // ============================================================
+  // Assert:
+  // When TEST is asserted, AB is repeated consecutively 3 times,
+  // then after 3 to 4 cycles BC is repeated non-consecutively 3 to 4 times,
+  // and after this, an arbitrary number of cycles may occur before CD rises.
+  // ============================================================
+
+  p_test_ab_bc_cd: assert property (
+    TEST |=> ( AB[*3]
+               ##[3:4]
+               (BC[->3] or BC[->4])
+               ##[0:$] $rose(CD) )
+  );
+
+  // ============================================================
+  // Assert:
+  // ERR is never active.
+  // ============================================================
+
+  p_err_never: assert property ( !ERR );
+
+  // ============================================================
+  // Assert:
+  // OPS always has either no bits or only one bit set to 1.
+  // ============================================================
+
+  p_ops_onehot0: assert property ( $onehot0(OPS) );
+
+  // ============================================================
+  // Assert:
+  // OPS changes according to the associated FSM.
+  // ============================================================
+
+  p_ops_0000_to_0001: assert property ( (!STALL && (OPS == 4'b0000)) |=> (OPS == 4'b0001) );
+
+  p_ops_0001_to_0010: assert property ( (!STALL && (OPS == 4'b0001) &&  OPCH) |=> (OPS == 4'b0010) );
+
+  p_ops_0001_to_0100: assert property ( (!STALL && (OPS == 4'b0001) && !OPCH) |=> (OPS == 4'b0100) );
+
+  p_ops_0010_to_1000: assert property ( (!STALL && (OPS == 4'b0010)) |=> (OPS == 4'b1000) );
+
+  p_ops_0100_to_1000: assert property ( (!STALL && (OPS == 4'b0100)) |=> (OPS == 4'b1000) );
+
+  p_ops_1000_to_0000: assert property ( (!STALL && (OPS == 4'b1000)) |=> (OPS == 4'b0000) );
+
+  // ============================================================
+  // Assert:
+  // If STALL is active, OPS does not change.
+  // ============================================================
+
+  p_ops_hold_on_stall: assert property ( STALL |=> (OPS == $past(OPS)) );
+
+  // ============================================================
+  // Cover:
+  // 4 cycles after OPS is 0100, OPS is 0100 again.
+  // ============================================================
+
+  c_ops_0100_after_4: cover property ( (OPS == 4'b0100) ##4 (OPS == 4'b0100) );
+
+endmodule
 

@@ -1,18 +1,25 @@
-bind v_bb_model v_bb_model_checker c0 (
-    .CLK(CLK),
-    .RST(RST),
-    .REQ(REQ),
-    .ACK(ACK),
-    .OPCH(OPCH),
-    .DONE(DONE),
-    .ERR(ERR),
-    .OPS(OPS),
-    .TEST(TEST),
-    .AB(AB),
-    .BC(BC),
-    .CD(CD),
-    .BUSY(BUSY),
-    .DATA(DATA),
-    .STALL(STALL)
+bind v_bb_model v_bb_props u_props (
+  .CLK(CLK),
+  .RST(RST),
+  .STALL(STALL),
+  .REQ(REQ),
+  .OPCH(OPCH),
+
+  .OPS(OPS),
+  .TEST(TEST),
+  .AB(AB),
+  .BC(BC),
+  .CD(CD),
+  .ERR(ERR),
+  .ACK(ACK),
+  .BUSY(BUSY),
+  .DONE(DONE),
+  .DATA(DATA),
+
+  .ack_next(ack_next),
+  .unacked_reqs(unacked_reqs),
+  .state_reg(state_reg),
+  .cnt(cnt),
+  ._000_(_000_)
 );
 

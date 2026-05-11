@@ -31,7 +31,7 @@ module counter(
     always_comb help1 = (count < 5);
 
     // Zadatak 2
-    assign er2 = ((count >= 1 && count < 3) || (count >= 6 && count < 9));
+    assign er2 = ((count >= 1 && count < 3) || (count >= 6 && count < 10));
 
     // Zadatak 3
     assign er3 = ((count == 1) || (count >= 5 && count < 7) || (count == 9));
@@ -44,7 +44,7 @@ module counter(
     // Zadatak 5
     assign endd5 = (count == 2);
     assign stop5 = 0;
-    assign er5 = (count == 11);
+    assign er5 = (count == 10);
     assign rdy5 = ((count >= 1 && count < 3) || (count >= 8 && count < 11));
     assign start5 = (count == 8);
 
@@ -67,7 +67,7 @@ module counter(
     // Zadatak 9
     assign rdy9 = (count >= 2 && count < 8);
     assign start9 = (count >= 5 && count < 8);
-    assign interrupt9 = (count == 8);
+    assign interrupt9 = (count == 7);
 
     // Zadatak 10
     assign ack10 = (count == 6);
